@@ -527,26 +527,22 @@ class TestFullyShardMixedPrecisionTraining(FSDPTest):
             self.assertEqual(param.grad.dtype, grad_dtype)
 
     @skip_if_lt_x_gpu(2)
-    def test_grad_dtype_non_uniform_warns_and_is_ignored(self):
-        """One reduce-scatter copy-in cannot take mixed dtypes. Rather than
-        failing a configuration that runs on main today, warn and fall back to
-        the pre-existing behavior of ignoring grad_dtype for that group."""
+    def test_grad_dtype_non_uniform(self):
+        """A group may carry different grad_dtype: the gradients are brought to
+        the reduce dtype for the single copy-in, then cast back per parameter."""
         torch.manual_seed(42)
         model = nn.Sequential(*[MLP(16, torch.device("cpu")) for _ in range(3)])
         model.to(device=device_type, dtype=torch.float32)
-        params = list(model[0].parameters())
-        params[0].grad_dtype = torch.bfloat16
-        params[1].grad_dtype = torch.float16
+        grad_dtypes = [torch.bfloat16, torch.float16, torch.float32]
+        for idx, param in enumerate(model[0].parameters()):
+            param.grad_dtype = grad_dtypes[idx % len(grad_dtypes)]
 
         fully_shard(model[0])
         fully_shard(model)
         torch.manual_seed(42 + self.rank + 1)
-        inp = torch.randn(2, 16, device=device_type)
-        with self.assertWarnsRegex(UserWarning, "uniform grad_dtype"):
-            model(inp).sum().backward()
-        for param in model[0].parameters():
-            self.assertEqual(param.grad_dtype, torch.float32)
-            self.assertEqual(param.grad.dtype, torch.float32)
+        model(torch.randn(2, 16, device=device_type)).sum().backward()
+        for idx, param in enumerate(model[0].parameters()):
+            self.assertEqual(param.grad.dtype, grad_dtypes[idx % len(grad_dtypes)])
 
     @skip_if_lt_x_gpu(2)
     def test_grad_dtype_preserved_across_load_state_dict(self):
