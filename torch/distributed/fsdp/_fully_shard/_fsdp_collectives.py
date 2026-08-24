@@ -646,7 +646,14 @@ def foreach_reduce(
                 if partial_reduce_output is not None:
                     partial_reduce_output += reduce_output
                 else:
-                    partial_reduce_output = reduce_output
+                    # Holding the partial sum at `reduce_dtype` rounds once per
+                    # microbatch, and that error compounds with the microbatch
+                    # count. Widen it the same way the no-collectives no-sync
+                    # path widens its accumulator, so the two cannot diverge.
+                    partial_reduce_output = _to_dtype_if_needed(
+                        reduce_output,
+                        fsdp_params[0]._accumulate_grad_dtype if fsdp_params else None,
+                    )
                 return (
                     reduce_scatter_input,
                     reduce_scatter_event,
