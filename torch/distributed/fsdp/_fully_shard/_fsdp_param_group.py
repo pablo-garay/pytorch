@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import warnings
 from typing import Any, cast, Literal, NamedTuple, TYPE_CHECKING
 from typing_extensions import TypeVarTuple, Unpack
 
@@ -302,6 +303,20 @@ class FSDPParamGroup:
         self._reduce_dtype = (
             next(iter(reduce_dtypes)) if dtype_sets_are_uniform else None
         )
+        # Gradients are produced at grad_dtype, and one reduce-scatter copy-in
+        # cannot take mixed dtypes, so a group has to be uniform. Fall back to
+        # the pre-existing behavior of ignoring grad_dtype rather than failing a
+        # configuration that runs today.
+        grad_dtypes = {p._explicit_grad_dtype or p.orig_dtype for p in trainable_params}
+        if len(trainable_params) > 0 and len(grad_dtypes) != 1:
+            warnings.warn(
+                "FSDP expects uniform grad_dtype within a parameter group but "
+                f"got {grad_dtypes}; ignoring grad_dtype for this group. Set "
+                "the same grad_dtype on every parameter in the group to have "
+                "it honored."
+            )
+            for fsdp_param in self.fsdp_params:
+                fsdp_param.clear_explicit_grad_dtype()
 
     def lazy_init(self):
         # Lazy init should be idempotent
