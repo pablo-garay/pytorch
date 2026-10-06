@@ -1602,7 +1602,12 @@ class TestCompileOnOneRankDeviceAsParameter(TestCase):
             compiled(torch.zeros(1, device="cuda:0"))
         with torch.cuda.device(1):
             x = torch.zeros(1, device="cuda:1")
-            self.assertEqual(compiled(x), f(x))
+            # f computes on a new stream that is not ordered with the current
+            # stream, so synchronize before it reads x and before comparing.
+            torch.cuda.synchronize()
+            actual, expected = compiled(x), f(x)
+            torch.cuda.synchronize()
+            self.assertEqual(actual, expected)
 
         self.assertEqual(cnt.frame_count, 1)
 
