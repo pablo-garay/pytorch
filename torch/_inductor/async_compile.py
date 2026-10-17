@@ -635,18 +635,25 @@ class AsyncCompile:
 
             # Select appropriate pool and worker function based on mode
             pool = self.get_worker_pool()
-            worker_fn = (
-                _worker_compile_triton_thread
-                if self.should_use_thread_workers()
-                else _worker_compile_triton
-            )
+            if self.should_use_thread_workers():
+                task = pool.submit(
+                    _worker_compile_triton_thread,
+                    load_kernel,
+                    extra_env,
+                    extra_config,
+                )
+            else:
+                from torch._inductor.runtime.triton_heuristics import (
+                    _resolve_load_device,
+                )
 
-            task = pool.submit(
-                worker_fn,
-                load_kernel,
-                extra_env,
-                extra_config,
-            )
+                task = pool.submit(
+                    _worker_compile_triton,
+                    load_kernel,
+                    extra_env,
+                    extra_config,
+                    _resolve_load_device(None, device_str),
+                )
 
             def get_result() -> CachingAutotuner:
                 try:

@@ -187,6 +187,22 @@ class TestStaticTritonLauncherUnit(TestCase):
         with DeviceGuard(iface, _resolve_load_device(None, "cpu")):
             pass
 
+    def test_resolve_load_device_uses_worker_load_device(self):
+        # Forked compile workers cannot initialize CUDA/HIP, so they must use the
+        # device passed by the parent instead of querying current_device().
+        from torch._inductor.runtime import triton_heuristics
+
+        with (
+            mock.patch.object(triton_heuristics, "_worker_load_device", 3),
+            mock.patch(
+                "torch._dynamo.device_interface.get_interface_for_device",
+                side_effect=AssertionError("current_device() was queried"),
+            ),
+        ):
+            self.assertEqual(triton_heuristics._resolve_load_device(None, "cuda"), 3)
+            self.assertEqual(triton_heuristics._resolve_load_device(1, "cuda"), 1)
+            self.assertIsNone(triton_heuristics._resolve_load_device(None, "cpu"))
+
     @skipIfRocm
     def test_global_scratch_allocation(self):
         kernel = self._global_scratch_kernel()

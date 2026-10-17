@@ -583,6 +583,11 @@ def get_caching_autotuner_plugins(
     return plugins
 
 
+# Set by subprocess compile workers to the parent's load device. They cannot call
+# current_device(): the compile sidecar initializes CUDA/HIP before forking them.
+_worker_load_device: int | None = None
+
+
 def _resolve_load_device(device: int | None, device_type: str) -> int | None:
     # compile-on-one-rank: a None device is the rank-agnostic marker; resolve it to the
     # current device at load time so a shared kernel's cubin loads on the running rank's
@@ -591,6 +596,8 @@ def _resolve_load_device(device: int | None, device_type: str) -> int | None:
     # exchange_device, which CPU does not implement -- so leave CPU as-is.
     if device is not None or device_type == "cpu":
         return device
+    if _worker_load_device is not None:
+        return _worker_load_device
     from torch._dynamo.device_interface import get_interface_for_device
 
     return get_interface_for_device(device_type.replace("hip", "cuda")).current_device()

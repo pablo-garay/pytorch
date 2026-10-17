@@ -202,9 +202,13 @@ def _worker_compile_triton(
     load_kernel: Callable[[], CachingAutotuner],
     extra_env: dict[str, str | None],
     extra_config: dict[str, Any],
+    load_device: int | None = None,
 ) -> tuple[CachingAutotuner, int]:
     _set_triton_ptxas_path()
     _apply_subprocess_env_and_clear_caches(extra_env)
+    from torch._inductor.runtime import triton_heuristics
+
+    triton_heuristics._worker_load_device = load_device
     # Keep Triton's in-process knob in sync with the parent environment, including
     # clearing stale worker state when the parent no longer has this variable.
     if "TRITON_LIBDEVICE_PATH" in extra_env:
